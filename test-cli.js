@@ -20,16 +20,6 @@ const TEST_CONFIG = {
     apiKey: '',
     model: 'gemini-1.5-flash-latest',
     url: 'https://generativelanguage.googleapis.com/v1beta/models'
-  },
-  ollama: {
-    url: 'http://localhost:11434',
-    model: 'llama3',
-    endpoint: '/api/tags'
-  },
-  lmstudio: {
-    url: 'http://192.168.68.145:1234',
-    model: 'llama-3',
-    endpoint: '/v1/models'
   }
 };
 
@@ -122,73 +112,6 @@ class AIServiceTester {
     }
   }
 
-  async testOllamaModels(url) {
-    if (!url.trim()) {
-      throw new Error('Ollama URL not set');
-    }
-
-    try {
-      const response = await fetch(new URL('/api/tags', url).toString(), {
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.models || !Array.isArray(data.models)) {
-        throw new Error('Invalid response format from Ollama API');
-      }
-
-      return data.models
-        .filter((model) => model.name)
-        .map((model) => model.name)
-        .sort();
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Request timed out. Please check if Ollama is running.');
-      }
-      throw error;
-    }
-  }
-
-  async testLMStudioModels(url) {
-    if (!url.trim()) {
-      throw new Error('LM Studio URL not set');
-    }
-
-    try {
-      const response = await fetch(new URL('/v1/models', url).toString(), {
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`LM Studio API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.data || !Array.isArray(data.data)) {
-        throw new Error('Invalid response format from LM Studio API');
-      }
-
-      return data.data
-        .filter((model) => model.id)
-        .map((model) => model.id)
-        .sort();
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Request timed out. Please check if LM Studio server is running.');
-      }
-      
-      throw error;
-    }
-  }
-
   async testTitleGeneration(provider, model, content, apiKey, url) {
     const prompt = `Generate a concise, descriptive title for the following text. The title must be a maximum of 200 characters: ${content}`;
     
@@ -200,10 +123,6 @@ class AIServiceTester {
           return await this.testAnthropicGeneration(apiKey, model, prompt);
         case 'google':
           return await this.testGoogleGeneration(apiKey, model, prompt);
-        case 'ollama':
-          return await this.testOllamaGeneration(url, model, prompt);
-        case 'lmstudio':
-          return await this.testLMStudioGeneration(url, model, prompt);
         default:
           throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -236,50 +155,9 @@ class AIServiceTester {
     return data.choices[0].message.content.trim();
   }
 
-  async testOllamaGeneration(url, model, prompt) {
-    const response = await fetch(new URL('/api/generate', url).toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model,
-        prompt: prompt,
-        stream: false,
-      }),
-    });
+  
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Ollama API error (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data.response.trim();
-  }
-
-  async testLMStudioGeneration(url, model, prompt) {
-    const response = await fetch(new URL('/v1/chat/completions', url).toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 100,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LM Studio API error (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content.trim();
-  }
+  
 }
 
 // CLI Interface
@@ -303,12 +181,10 @@ class CLITester {
     console.log('1. Test OpenAI Models');
     console.log('2. Test Anthropic Models');
     console.log('3. Test Google Models');
-    console.log('4. Test Ollama Models');
-    console.log('5. Test LM Studio Models');
-    console.log('6. Test Title Generation');
-    console.log('7. Exit');
+    console.log('4. Test Title Generation');
+    console.log('5. Exit');
     
-    const choice = await this.question('\nSelect option (1-7): ');
+    const choice = await this.question('\nSelect option (1-5): ');
     return choice.trim();
   }
 
@@ -329,14 +205,6 @@ class CLITester {
           const googleKey = await this.question('Enter Google API key: ');
           models = await this.aiService.testGoogleModels(googleKey);
           break;
-        case 'ollama':
-          const ollamaUrl = await this.question(`Enter Ollama URL [${TEST_CONFIG.ollama.url}]: `) || TEST_CONFIG.ollama.url;
-          models = await this.aiService.testOllamaModels(ollamaUrl);
-          break;
-        case 'lmstudio':
-          const lmstudioUrl = await this.question(`Enter LM Studio URL [${TEST_CONFIG.lmstudio.url}]: `) || TEST_CONFIG.lmstudio.url;
-          models = await this.aiService.testLMStudioModels(lmstudioUrl);
-          break;
       }
 
       console.log(`\n✅ Found ${models.length} models:`);
@@ -351,7 +219,7 @@ class CLITester {
   async testTitleGeneration() {
     console.log('\n--- Test Title Generation ---');
     
-    const provider = await this.question('Provider (openai/anthropic/google/ollama/lmstudio): ');
+    const provider = await this.question('Provider (openai/anthropic/google): ');
     const model = await this.question('Model name: ');
     const content = await this.question('Content to generate title for: ');
     
@@ -390,15 +258,9 @@ class CLITester {
           await this.testModels('google');
           break;
         case '4':
-          await this.testModels('ollama');
-          break;
-        case '5':
-          await this.testModels('lmstudio');
-          break;
-        case '6':
           await this.testTitleGeneration();
           break;
-        case '7':
+        case '5':
           console.log('👋 Goodbye!');
           this.rl.close();
           return;
